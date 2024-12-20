@@ -1,18 +1,18 @@
 import { useState } from "react";
-
-interface List {
-  id: string;
-  title: string;
-  cards: Card[];
-}
-
-interface Card {
-  id: string;
-  content: string;
-}
+import {
+  DndContext,
+  DragOverlay,
+  DragStartEvent,
+  DragEndEvent,
+  useSensors,
+  useSensor,
+  PointerSensor,
+} from "@dnd-kit/core";
+import { List, ListType } from "./List";
+import { Card, CardType } from "./Card";
 
 export default function Board() {
-  const [lists, setLists] = useState<List[]>([
+  const [lists, setLists] = useState<ListType[]>([
     {
       id: "1",
       title: "To Do",
@@ -28,6 +28,68 @@ export default function Board() {
     },
   ]);
 
+  const [activeCard, setActiveCard] = useState<CardType | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
+
+  function handleDragStart(event: DragStartEvent) {
+    const { active } = event;
+    const activeCard = lists
+      .flatMap((list) => list.cards)
+      .find((card) => card.id === active.id);
+
+    setActiveCard(activeCard || null);
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+
+    if (!over) return;
+
+    if (active.id !== over.id) {
+      const activeListId = lists.find((list) =>
+        list.cards.some((card) => card.id === active.id)
+      )?.id;
+
+      const overListId = lists.find((list) =>
+        list.cards.some((card) => card.id === over.id)
+      )?.id;
+
+      if (activeListId && overListId) {
+        setLists((lists) => {
+          const newLists = [...lists];
+          const activeList = newLists.find((list) => list.id === activeListId)!;
+          const overList = newLists.find((list) => list.id === overListId)!;
+
+          const activeCardIndex = activeList.cards.findIndex(
+            (card) => card.id === active.id
+          );
+          const overCardIndex = overList.cards.findIndex(
+            (card) => card.id === over.id
+          );
+
+          const activeCard = activeList.cards[activeCardIndex];
+
+          // Remove from active list
+          activeList.cards.splice(activeCardIndex, 1);
+
+          // Add to over list
+          overList.cards.splice(overCardIndex, 0, activeCard);
+
+          return newLists;
+        });
+      }
+    }
+
+    setActiveCard(null);
+  }
+
   return (
     <div className="h-screen p-4">
       <div className="flex flex-col h-full">
@@ -36,30 +98,25 @@ export default function Board() {
         </header>
 
         <main className="flex-1 overflow-x-auto">
-          <div className="flex gap-4 h-full">
-            {lists.map((list) => (
-              <div
-                key={list.id}
-                className="flex-shrink-0 w-72 bg-gray-100 rounded-lg p-4"
-              >
-                <h2 className="font-bold mb-4">{list.title}</h2>
-                <div className="flex flex-col gap-2">
-                  {list.cards.map((card) => (
-                    <div
-                      key={card.id}
-                      className="bg-white p-3 rounded shadow cursor-pointer hover:shadow-md"
-                    >
-                      {card.content}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+          <DndContext
+            sensors={sensors}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="flex gap-4 h-full">
+              {lists.map((list) => (
+                <List key={list.id} list={list} />
+              ))}
 
-            <button className="flex-shrink-0 w-72 h-12 bg-gray-100 rounded-lg flex items-center justify-center hover:bg-gray-200">
-              + Add another list
-            </button>
-          </div>
+              <button className="flex-shrink-0 w-72 h-12 bg-gray-100 rounded-lg flex items-center justify-center hover:bg-gray-200">
+                + Add another list
+              </button>
+            </div>
+
+            <DragOverlay>
+              {activeCard ? <Card card={activeCard} /> : null}
+            </DragOverlay>
+          </DndContext>
         </main>
       </div>
     </div>
